@@ -20,6 +20,8 @@
         .report { background: #f8f9fa; padding: 20px; border-radius: 15px; margin-top: 20px; border-left: 5px solid #3498db; }
         .error-box { background: #fee; border-left: 5px solid #e74c3c; padding: 20px; border-radius: 15px; margin-top: 20px; }
     </style>
+    <!-- 引入 Gradio 官方 JS 客户端 -->
+    <script type="module" src="https://gradio.s3-us-west-2.amazonaws.com/5.0.0/gradio.js"></script>
 </head>
 <body>
 <div class="container">
@@ -58,84 +60,98 @@
 </div>
 
 <script>
-var HF_URL = "https://zzzrrrr-zzzrrr.hf.space";
-console.log("HF_URL =", HF_URL);
+    const SPACE_URL = "https://zzzrrrr-zzzrrr.hf.space";
+    
+    let selectedFile = null;
+    let gradioApp = null;
 
-var fileInput = document.getElementById('fileInput');
-var analyzeBtn = document.getElementById('analyzeBtn');
-var originalImg = document.getElementById('originalImg');
-var originalPlaceholder = document.getElementById('originalPlaceholder');
-var resultImg = document.getElementById('resultImg');
-var resultPlaceholder = document.getElementById('resultPlaceholder');
-var report = document.getElementById('report');
-var reportText = document.getElementById('reportText');
-var errorBox = document.getElementById('errorBox');
-var errorDetail = document.getElementById('errorDetail');
-var selectedFile = null;
+    const fileInput = document.getElementById('fileInput');
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    const originalImg = document.getElementById('originalImg');
+    const originalPlaceholder = document.getElementById('originalPlaceholder');
+    const resultImg = document.getElementById('resultImg');
+    const resultPlaceholder = document.getElementById('resultPlaceholder');
+    const report = document.getElementById('report');
+    const reportText = document.getElementById('reportText');
+    const errorBox = document.getElementById('errorBox');
+    const errorDetail = document.getElementById('errorDetail');
 
-fileInput.addEventListener('change', function() {
-    if (fileInput.files.length > 0) {
-        selectedFile = fileInput.files[0];
-        var reader = new FileReader();
-        reader.onload = function(e) {
-            originalImg.src = e.target.result;
-            originalImg.style.display = 'block';
-            originalPlaceholder.style.display = 'none';
-        };
-        reader.readAsDataURL(selectedFile);
-        analyzeBtn.disabled = false;
-        resultImg.style.display = 'none';
-        resultPlaceholder.style.display = 'block';
-        resultPlaceholder.textContent = '点击分析后显示';
-        report.style.display = 'none';
-        errorBox.style.display = 'none';
-    }
-});
-
-analyzeBtn.addEventListener('click', function() {
-    if (!selectedFile) return;
-
-    analyzeBtn.disabled = true;
-    analyzeBtn.textContent = '分析中...';
-    resultPlaceholder.textContent = 'AI正在分析...';
-    errorBox.style.display = 'none';
-
-    var formData = new FormData();
-    formData.append('data', selectedFile);
-
-    fetch(HF_URL + '/api/predict', {
-        method: 'POST',
-        body: formData
-    })
-    .then(function(response) {
-        if (!response.ok) throw new Error('HTTP ' + response.status);
-        return response.json();
-    })
-    .then(function(result) {
-        if (result.data && result.data.length >= 2) {
-            var imgData = result.data[0];
-            var diagnosis = result.data[1];
-            if (imgData) {
-                resultImg.src = imgData.startsWith('data:') ? imgData : 'data:image/png;base64,' + imgData;
-                resultImg.style.display = 'block';
-                resultPlaceholder.style.display = 'none';
-            }
-            reportText.textContent = diagnosis;
-            report.style.display = 'block';
-        } else {
-            throw new Error('返回数据格式错误');
+    // 初始化 Gradio 客户端
+    async function initGradio() {
+        try {
+            const { client } = await import("https://gradio.s3-us-west-2.amazonaws.com/5.0.0/gradio.js");
+            gradioApp = await client.connect(SPACE_URL);
+            console.log("✅ Gradio 连接成功！");
+        } catch (error) {
+            console.error("❌ Gradio 连接失败:", error);
+            errorBox.style.display = 'block';
+            errorDetail.textContent = '连接后台失败: ' + error.message;
         }
-    })
-    .catch(function(error) {
-        errorBox.style.display = 'block';
-        errorDetail.textContent = '分析失败: ' + error.message;
-        resultPlaceholder.textContent = '分析失败';
-    })
-    .finally(function() {
-        analyzeBtn.disabled = false;
-        analyzeBtn.textContent = '开始分析';
+    }
+    initGradio();
+
+    fileInput.addEventListener('change', function() {
+        if (fileInput.files.length > 0) {
+            selectedFile = fileInput.files[0];
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                originalImg.src = e.target.result;
+                originalImg.style.display = 'block';
+                originalPlaceholder.style.display = 'none';
+            };
+            reader.readAsDataURL(selectedFile);
+            analyzeBtn.disabled = false;
+            resultImg.style.display = 'none';
+            resultPlaceholder.style.display = 'block';
+            resultPlaceholder.textContent = '点击分析后显示';
+            report.style.display = 'none';
+            errorBox.style.display = 'none';
+        }
     });
-});
+
+    analyzeBtn.addEventListener('click', async function() {
+        if (!selectedFile || !gradioApp) {
+            errorBox.style.display = 'block';
+            errorDetail.textContent = '请先上传图片，并等待后台连接完成';
+            return;
+        }
+
+        analyzeBtn.disabled = true;
+        analyzeBtn.textContent = '分析中...';
+        resultPlaceholder.textContent = 'AI正在分析...';
+        errorBox.style.display = 'none';
+
+        try {
+            // 使用 Gradio 客户端直接调用
+            const result = await gradioApp.predict("/predict", [selectedFile]);
+            
+            console.log("分析结果:", result);
+            
+            if (result.data && result.data.length >= 2) {
+                const imgData = result.data[0];
+                const diagnosis = result.data[1];
+                
+                if (imgData) {
+                    resultImg.src = imgData.startsWith('data:') ? imgData : 'data:image/png;base64,' + imgData;
+                    resultImg.style.display = 'block';
+                    resultPlaceholder.style.display = 'none';
+                }
+                
+                reportText.textContent = diagnosis;
+                report.style.display = 'block';
+            } else {
+                throw new Error('返回数据格式错误: ' + JSON.stringify(result));
+            }
+        } catch (error) {
+            console.error("分析失败:", error);
+            errorBox.style.display = 'block';
+            errorDetail.textContent = '分析失败: ' + error.message;
+            resultPlaceholder.textContent = '分析失败';
+        } finally {
+            analyzeBtn.disabled = false;
+            analyzeBtn.textContent = '开始分析';
+        }
+    });
 </script>
 </body>
 </html>
